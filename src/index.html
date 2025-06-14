@@ -1,22 +1,186 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <link rel="stylesheet" href="styles.css" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>PakePlus App</title>
-        <script type="module" src="/main.js" defer></script>
-    </head>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ww</title>
+    <!-- 1. 引入 Tailwind CSS 用于样式 -->
+    <script src="css.js"></script>
+    <!-- 2. 引入 diff-match-patch 库 -->
+    <script src="1.js"></script>
+        <style>
+        /* 自定义样式，确保文本区域的背景透明，并且光标可见 */
+        .custom-textarea {
+            background-color: transparent;
+            color: transparent; /* 使输入的文字透明，只显示下层高亮 */
+            caret-color: black; /* 确保光标是黑色的，可见 */
+        }
+        /* 覆盖层不允许鼠标事件，以便可以操作下方的文本区域 */
+        .overlay {
+            pointer-events: none;
+        }
+        /* 确保高亮文本的换行和断词与 textarea 行为一致 */
+        .highlight-content {
+            white-space: pre-wrap;
+            overflow-wrap: break-word;
+        }
+        /* 自定义选中文字的样式，恢复蓝底白字 */
+        ::selection {
+            background-color: #0078d4; /* 默认蓝色选中背景 */
+            color: #ffffff; /* 白色文字 */
+        }
+        /* Firefox 专用选中样式 */
+        ::-moz-selection {
+            background-color: #0078d4;
+            color: #ffffff;
+        }
+        /* 针对 overlay 中的选中样式，确保不会覆盖高亮 */
+        .overlay ::selection,
+        .overlay ::-moz-selection {
+            background-color: #0078d4;
+            color: #ffffff;
+        }
+        /* 不可复制的填充行样式 */
+        .padding-row {
+            user-select: none; /* 禁止选中 */
+            color: transparent; /* 隐藏文字 */
+        }
+    </style>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
 
-    <body>
-        <main class="container">
-            <h1>Welcome to PakePlus</h1>
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8 w-full max-w-7xl">
+        <!-- 主容器 -->
+        <div class="flex flex-col md:flex-row gap-6">
+            <!-- 左侧输入区域 -->
+            <div class="relative w-full md:w-1/2 bg-white border border-gray-200">
+                <div id="overlayA" class="overlay absolute inset-0 p-3 font-mono text-sm overflow-auto highlight-content leading-relaxed"></div>
+                <textarea 
+                    id="inputA"
+                    class="custom-textarea relative w-full h-96 md:h-[80vh] p-3 resize-none font-mono text-sm focus:outline-none leading-relaxed"
+                ></textarea>
+            </div>
+            <!-- 右侧输入区域 -->
+            <div class="relative w-full md:w-1/2 bg-white border border-gray-200">
+                <div id="overlayB" class="overlay absolute inset-0 p-3 font-mono text-sm overflow-auto highlight-content leading-relaxed"></div>
+                <textarea 
+                    id="inputB"
+                    class="custom-textarea relative w-full h-96 md:h-[80vh] p-3 resize-none font-mono text-sm focus:outline-none leading-relaxed"
+                ></textarea>
+            </div>
+        </div>
+    </div>
 
-            <form class="row" id="greet-form">
-                <input id="greet-input" placeholder="Enter a name..." />
-                <button type="submit">Greet</button>
-            </form>
-            <p id="greet-msg"></p>
-        </main>
-    </body>
+    <script>
+        // 等待文档加载完毕后执行脚本
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // 初始化 diff-match-patch 实例
+            const dmp = new diff_match_patch();
+
+            // 获取 DOM 元素
+            const inputA = document.getElementById('inputA');
+            const inputB = document.getElementById('inputB');
+            const overlayA = document.getElementById('overlayA');
+            const overlayB = document.getElementById('overlayB');
+
+            /**
+             * 根据 diff 结果生成高亮显示的 HTML
+             * @param {Array} diffs - dmp.diff_main() 生成的差异数组
+             * @param {boolean} isA - 判断是为文本 A 还是文本 B 生成高亮 (true for A, false for B)
+             * @returns {string} - 用于 innerHTML 的 HTML 字符串
+             */
+            const createHighlightHTML = (diffs, isA) => {
+                return diffs.map(([op, text]) => {
+                    const safeText = text.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+                    switch (op) {
+                        case 0:
+                            return `<span class='text-gray-500'>${safeText}</span>`;
+                        case -1:
+                            return isA ? `<span class='bg-red-100 text-red-800 line-through'>${safeText}</span>` : '';
+                        case 1:
+                            return !isA ? `<span class='bg-green-100 text-green-800'>${safeText}</span>` : '';
+                        default:
+                            return '';
+                    }
+                }).join("") + "<br><br><br><span class='padding-row'> </span>"; // 添加3行填充
+            };
+
+            /**
+             * 更新差异对比显示
+             */
+            const updateDiffs = () => {
+                const textA = inputA.value;
+                const textB = inputB.value;
+                
+                if (textA.trim() === '' || textB.trim() === '') {
+                    overlayA.innerHTML = textA.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">") + "<br><br><br><span class='padding-row'> </span>";
+                    overlayB.innerHTML = textB.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">") + "<br><br><br><span class='padding-row'> </span>";
+                    return;
+                }
+
+                const diffs = dmp.diff_main(textA, textB);
+                dmp.diff_cleanupSemantic(diffs);
+
+                overlayA.innerHTML = createHighlightHTML(diffs, true);
+                overlayB.innerHTML = createHighlightHTML(diffs, false);
+                
+                syncOverlayScroll();
+                limitScrollBottom();
+            };
+            
+            /**
+             * 同步覆盖层和文本区域的滚动条
+             */
+            const syncOverlayScroll = () => {
+                overlayA.scrollTop = inputA.scrollTop;
+                overlayA.scrollLeft = inputA.scrollLeft;
+                overlayB.scrollTop = inputB.scrollTop;
+                overlayB.scrollLeft = inputB.scrollLeft;
+            };
+
+            /**
+             * 同步两个文本区域的滚动条
+             */
+            const syncPeerScroll = (source, target) => {
+                target.scrollTop = source.scrollTop;
+                target.scrollLeft = source.scrollLeft;
+                syncOverlayScroll();
+            };
+
+            /**
+             * 限制滚动条滚到底部
+             */
+            const limitScrollBottom = () => {
+                const maxScrollTopA = inputA.scrollHeight - inputA.clientHeight - 20;
+                const maxScrollTopB = inputB.scrollHeight - inputB.clientHeight - 20;
+                if (inputA.scrollTop > maxScrollTopA) inputA.scrollTop = maxScrollTopA;
+                if (inputB.scrollTop > maxScrollTopB) inputB.scrollTop = maxScrollTopB;
+                syncOverlayScroll();
+            };
+
+            /**
+             * 处理粘贴事件，将滚动条重置到顶部
+             */
+            const handlePaste = () => {
+                setTimeout(() => {
+                    inputA.scrollTop = 0;
+                    inputB.scrollTop = 0;
+                }, 0);
+            };
+
+            // 添加事件监听器
+            inputA.addEventListener('paste', handlePaste);
+            inputB.addEventListener('paste', handlePaste);
+            inputA.addEventListener('input', () => requestAnimationFrame(updateDiffs));
+            inputB.addEventListener('input', () => requestAnimationFrame(updateDiffs));
+            inputA.addEventListener('scroll', () => syncPeerScroll(inputA, inputB));
+            inputB.addEventListener('scroll', () => syncPeerScroll(inputB, inputA));
+
+            // 初始加载时执行一次
+            updateDiffs();
+        });
+    </script>
+</body>
 </html>
